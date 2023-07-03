@@ -19,7 +19,7 @@ int main(int argc, char* argv[])
 	bool enableDebugOutput = false;
 
 	const char* targetFormatString = "R16G16B16A16_SFLOAT";
-	const char* distributionString = "GGX";
+	const char* distributionString = "None";
 
 	if (argc == 1 ||
 		strcmp(argv[1], "-h") == 0 ||
@@ -30,7 +30,7 @@ int main(int argc, char* argv[])
 		printf("-inputPath: path to panorama image (default) or cube map (if inputIsCubeMap flag ist set) \n");
 		printf("-outCubeMap: output path for filtered cube map\n");
 		printf("-outLUT output path for BRDF LUT\n");
-		printf("-distribution NDF to sample (Lambertian, GGX, Charlie)\n");
+		printf("-distribution NDF to sample (None, Lambertian, GGX, Charlie)\n");
 		printf("-sampleCount: number of samples used for filtering (default = 1024)\n");
 		printf("-mipLevelCount: number of mip levels of specular cube map. If omitted, an optimal mipmap level is chosen, based on the input panorama's resolution.\n");
 		printf("-cubeMapResolution: resolution of output cube map.  If omitted, an optimal resolution is chosen, based on the input panorama's resolution.\n");
@@ -89,7 +89,11 @@ int main(int argc, char* argv[])
 		{
 			distributionString = nextArg;
 
-			if (strcmp(distributionString, "Lambertian") == 0)
+			if (strcmp(distributionString, "None") == 0)
+			{
+				distribution = Distribution::None;
+			}
+			else if (strcmp(distributionString, "Lambertian") == 0)
 			{
 				distribution = Distribution::Lambertian;
 			}
@@ -128,7 +132,7 @@ int main(int argc, char* argv[])
 		pathOutCubeMap = "outputCubeMap.ktx2";
 	}
 
-	if (pathOutLUT == nullptr)
+	if (pathOutLUT == nullptr && distribution != Distribution::None)
 	{
 		pathOutLUT = "outputLUT.png";
 	}

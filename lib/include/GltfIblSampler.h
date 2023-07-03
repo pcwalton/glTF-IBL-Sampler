@@ -12,9 +12,10 @@ namespace IBLLib
 
 	enum class Distribution : unsigned int 
 	{
-		Lambertian = 0,
-		GGX = 1,
-		Charlie = 2
+		None = 0,
+		Lambertian = 1,
+		GGX = 2,
+		Charlie = 3
 	};
 
 	Result sample(const char* _inputPath, const char* _outputPathCubeMap, const char* _outputPathLUT, Distribution _distribution, unsigned int  _cubemapResolution, unsigned int _mipmapCount, unsigned int _sampleCount, OutputFormat _targetFormat, float _lodBias, bool _debugOutput);

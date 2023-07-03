@@ -758,9 +758,13 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 	}
 	
 	VkImage outputCubeMap = VK_NULL_HANDLE;
-	if (vulkan.createImage2DAndAllocate(outputCubeMap, cubeMapSideLength, cubeMapSideLength, cubeMapFormat,
-																			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-																			outputMipLevels, 6u, VK_IMAGE_TILING_OPTIMAL, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_EXCLUSIVE, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) != VK_SUCCESS)
+	if (_distribution == IBLLib::Distribution::None)
+	{
+		outputCubeMap = inputCubeMap;
+	}
+	else if (vulkan.createImage2DAndAllocate(outputCubeMap, cubeMapSideLength, cubeMapSideLength, cubeMapFormat,
+																					 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+																					 outputMipLevels, 6u, VK_IMAGE_TILING_OPTIMAL, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_EXCLUSIVE, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) != VK_SUCCESS)
 	{
 		return Result::VulkanError;
 	}
@@ -798,23 +802,26 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 	}
 
 	VkImage outputLUT = VK_NULL_HANDLE;
-	if (vulkan.createImage2DAndAllocate(outputLUT, cubeMapSideLength, cubeMapSideLength, LUTFormat,
-																			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT /*| VK_IMAGE_USAGE_SAMPLED_BIT*/,
-																			1u, 1u, VK_IMAGE_TILING_OPTIMAL, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_EXCLUSIVE) != VK_SUCCESS)
-	{
-		return Result::VulkanError;
-	}
-
 	VkImageView outputLUTView = VK_NULL_HANDLE;
+	if (_distribution != IBLLib::Distribution::None)
 	{
-		VkImageSubresourceRange subresourceRange{};
-		subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		subresourceRange.layerCount = 1u;
-		subresourceRange.levelCount = 1u;
-
-		if (vulkan.createImageView(outputLUTView, outputLUT, subresourceRange, VK_FORMAT_UNDEFINED, VK_IMAGE_VIEW_TYPE_2D) != VK_SUCCESS)
+		if (vulkan.createImage2DAndAllocate(outputLUT, cubeMapSideLength, cubeMapSideLength, LUTFormat,
+																				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT /*| VK_IMAGE_USAGE_SAMPLED_BIT*/,
+																				1u, 1u, VK_IMAGE_TILING_OPTIMAL, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_EXCLUSIVE) != VK_SUCCESS)
 		{
 			return Result::VulkanError;
+		}
+
+		{
+			VkImageSubresourceRange subresourceRange{};
+			subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			subresourceRange.layerCount = 1u;
+			subresourceRange.levelCount = 1u;
+
+			if (vulkan.createImageView(outputLUTView, outputLUT, subresourceRange, VK_FORMAT_UNDEFINED, VK_IMAGE_VIEW_TYPE_2D) != VK_SUCCESS)
+			{
+				return Result::VulkanError;
+			}
 		}
 	}
 
@@ -859,6 +866,7 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 	VkDescriptorSet filterDescriptorSet = VK_NULL_HANDLE;
 	VkPipelineLayout filterPipelineLayout = VK_NULL_HANDLE;
 	VkPipeline filterPipeline = VK_NULL_HANDLE;
+	if (_distribution != IBLLib::Distribution::None)
 	{
 		DescriptorSetInfo setLayout0;
 		uint32_t binding = 1u;
@@ -937,74 +945,86 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 
 	// Filter
 
-	switch (_distribution)
+	if (_distribution != IBLLib::Distribution::None)
 	{
-		case IBLLib::Distribution::Lambertian:
-			printf("Filtering lambertian\n");
-			break;
-		case IBLLib::Distribution::GGX:
-			printf("Filtering GGX\n");
-			break;
-		case IBLLib::Distribution::Charlie:
-			printf("Filtering Charlie\n");
-			break;
-		default:
-			break;
-	}
-
-	vulkan.bindDescriptorSet(cubeMapCmd, filterPipelineLayout, filterDescriptorSet);
-
-	vkCmdBindPipeline(cubeMapCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, filterPipeline);
-
-	// Filter every mip level: from inputCubeMap->currentMipLevel
-	// The mip levels are filtered from the smallest mipmap to the largest mipmap,
-	// i.e. the last mipmap is filtered last.
-	// This has the desirable side effect that the framebuffer size of the last filter pass
-	// matches with the LUT size, allowing the LUT to only be written in the last pass
-	// without worrying to preserve the LUT's image contents between the previous render passes.
-	for (uint32_t currentMipLevel = outputMipLevels - 1; currentMipLevel != -1; currentMipLevel--)
-	{
-		unsigned int currentFramebufferSideLength = cubeMapSideLength >> currentMipLevel;
-		std::vector<VkImageView> renderTargetViews(outputCubeMapViews[currentMipLevel]);
-
-		renderTargetViews.emplace_back(outputLUTView);
-
-		//Framebuffer will be destroyed automatically at shutdown
-		VkFramebuffer filterOutputFramebuffer = VK_NULL_HANDLE;
-		if (vulkan.createFramebuffer(filterOutputFramebuffer, renderPass, currentFramebufferSideLength, currentFramebufferSideLength, renderTargetViews, 1u) != VK_SUCCESS)
+		switch (_distribution)
 		{
-			return Result::VulkanError;
+			case IBLLib::Distribution::Lambertian:
+				printf("Filtering lambertian\n");
+				break;
+			case IBLLib::Distribution::GGX:
+				printf("Filtering GGX\n");
+				break;
+			case IBLLib::Distribution::Charlie:
+				printf("Filtering Charlie\n");
+				break;
+			default:
+				break;
 		}
 
-		VkImageSubresourceRange  subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, currentMipLevel, 1u, 0u, 6u };
+		vulkan.bindDescriptorSet(cubeMapCmd, filterPipelineLayout, filterDescriptorSet);
 
-		vulkan.imageBarrier(cubeMapCmd, outputCubeMap,
-												VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-												VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,//src stage, access
-												VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // dst stage, access
-												subresourceRange);
+		vkCmdBindPipeline(cubeMapCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, filterPipeline);
 
-		PushConstant values{};
-		values.roughness = static_cast<float>(currentMipLevel) / static_cast<float>(outputMipLevels - 1);
-		values.sampleCount = _sampleCount;
-		values.mipLevel = currentMipLevel;
-		values.width = cubeMapSideLength;
-		values.lodBias = _lodBias;
-		values.distribution = _distribution;
+		// Filter every mip level: from inputCubeMap->currentMipLevel
+		// The mip levels are filtered from the smallest mipmap to the largest mipmap,
+		// i.e. the last mipmap is filtered last.
+		// This has the desirable side effect that the framebuffer size of the last filter pass
+		// matches with the LUT size, allowing the LUT to only be written in the last pass
+		// without worrying to preserve the LUT's image contents between the previous render passes.
+		for (uint32_t currentMipLevel = outputMipLevels - 1; currentMipLevel != -1; currentMipLevel--)
+		{
+			unsigned int currentFramebufferSideLength = cubeMapSideLength >> currentMipLevel;
+			std::vector<VkImageView> renderTargetViews(outputCubeMapViews[currentMipLevel]);
 
-		vkCmdPushConstants(cubeMapCmd, filterPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &values);
+			renderTargetViews.emplace_back(outputLUTView);
 
-		vulkan.beginRenderPass(cubeMapCmd, renderPass, filterOutputFramebuffer, VkRect2D{ 0u, 0u, currentFramebufferSideLength, currentFramebufferSideLength }, clearValues);
-		vkCmdDraw(cubeMapCmd, 3, 1u, 0, 0);
-		vulkan.endRenderPass(cubeMapCmd);
+			//Framebuffer will be destroyed automatically at shutdown
+			VkFramebuffer filterOutputFramebuffer = VK_NULL_HANDLE;
+			if (vulkan.createFramebuffer(filterOutputFramebuffer, renderPass, currentFramebufferSideLength, currentFramebufferSideLength, renderTargetViews, 1u) != VK_SUCCESS)
+			{
+				return Result::VulkanError;
+			}
+
+			VkImageSubresourceRange  subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, currentMipLevel, 1u, 0u, 6u };
+
+			vulkan.imageBarrier(cubeMapCmd, outputCubeMap,
+													VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+													VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,//src stage, access
+													VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // dst stage, access
+													subresourceRange);
+
+			PushConstant values{};
+			values.roughness = static_cast<float>(currentMipLevel) / static_cast<float>(outputMipLevels - 1);
+			values.sampleCount = _sampleCount;
+			values.mipLevel = currentMipLevel;
+			values.width = cubeMapSideLength;
+			values.lodBias = _lodBias;
+			values.distribution = _distribution;
+
+			vkCmdPushConstants(cubeMapCmd, filterPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &values);
+
+			vulkan.beginRenderPass(cubeMapCmd, renderPass, filterOutputFramebuffer, VkRect2D{ 0u, 0u, currentFramebufferSideLength, currentFramebufferSideLength }, clearValues);
+			vkCmdDraw(cubeMapCmd, 3, 1u, 0, 0);
+			vulkan.endRenderPass(cubeMapCmd);
+		}
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////
 	//Output
 
 	VkFormat targetFormat = static_cast<VkFormat>(_targetFormat);
-	VkImageLayout currentCubeMapImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	VkImageLayout currentCubeMapImageLayout;
 	VkImage convertedCubeMap = VK_NULL_HANDLE;
+
+	if(_distribution == IBLLib::Distribution::None)
+	{
+		currentCubeMapImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	}
+	else
+	{
+		currentCubeMapImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	}
 
 	if(targetFormat != cubeMapFormat)
 	{
