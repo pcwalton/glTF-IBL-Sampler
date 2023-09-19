@@ -1,4 +1,4 @@
-# glTF IBL Sampler
+# glTF IBL Sampler, "lite" version
 
 ## Introduction
 
@@ -10,6 +10,10 @@ Algorithm references:
 * [GPU-Based Importance Sampling](https://developer.nvidia.com/gpugems/GPUGems3/gpugems3_ch20.html)
 * [Runtime Environment Map Filtering for Image Based Lighting](https://placeholderart.wordpress.com/2015/07/28/implementation-notes-runtime-environment-map-filtering-for-image-based-lighting/)
 * [Filtering shader](lib/source/shaders/filter.frag)
+
+### Lite version
+
+This "lite" version drops the external dependencies on KTX2-Software and `glslang`, to make the library easier to integrate into external projects.
 
 <!--
 The official Khronos [glTF Sample Viewer](https://github.com/KhronosGroup/glTF-Sample-Viewer) is used to clarify, how e.g. a physically-based material has to be lit and rendered. In the [glTF 2.0 reference](https://www.khronos.org/files/gltf20-reference-guide.pdf), the default material model is the Metallic-Roughness-Model. 
@@ -35,11 +39,7 @@ The project provides a cmake file to generate respective build files.
 Third Party Requirements:
 
 * [Vulkan SDK](https://vulkan.lunarg.com)
-* Glslang (included in the Vulkan SDK)
 * [STB](https://github.com/nothings/stb) image library (git submodule, no need to install)
-* [KTX-Software](https://github.com/KhronosGroup/KTX-Software/releases) (you might need to manually install KTX-Software with the [pull request that fixes cmake find_package](https://github.com/KhronosGroup/KTX-Software/pull/325))
-
-CMake option ```IBLSAMPLER_EXPORT_SHADERS``` can be used to automatically copy the shader folder to the executable folder when generating the project files. By default, shaders will be loaded from their source location in lib/shaders.
 
 The glTF-IBL-Sampler consists of two projects: lib (shared library) and cli (executable). 
 
