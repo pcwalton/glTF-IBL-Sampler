@@ -618,23 +618,23 @@ Result panoramaToCubemap(vkHelper& _vulkan, const VkCommandBuffer _commandBuffer
 			return Result::VulkanError;
 		}
 
-		GraphicsPipelineDesc panormaToCubePipeline;
+		GraphicsPipelineDesc panoramaToCubePipeline;
 
-		panormaToCubePipeline.addShaderStage(fullscreenVertexShader, VK_SHADER_STAGE_VERTEX_BIT, "main");
-		panormaToCubePipeline.addShaderStage(panoramaToCubeMapFragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT, "main");
+		panoramaToCubePipeline.addShaderStage(fullscreenVertexShader, VK_SHADER_STAGE_VERTEX_BIT, "main");
+		panoramaToCubePipeline.addShaderStage(panoramaToCubeMapFragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT, "main");
 
-		panormaToCubePipeline.setRenderPass(renderPass);
-		panormaToCubePipeline.setPipelineLayout(panoramaPipelineLayout);
+		panoramaToCubePipeline.setRenderPass(renderPass);
+		panoramaToCubePipeline.setPipelineLayout(panoramaPipelineLayout);
 
 		VkPipelineColorBlendAttachmentState colorBlendAttachment{};
 		colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		colorBlendAttachment.blendEnable = VK_FALSE;
 
-		panormaToCubePipeline.addColorBlendAttachment(colorBlendAttachment,6);
+		panoramaToCubePipeline.addColorBlendAttachment(colorBlendAttachment,6);
 
-		panormaToCubePipeline.setViewportExtent(VkExtent2D{ cubeMapSideLength, cubeMapSideLength });
+		panoramaToCubePipeline.setViewportExtent(VkExtent2D{ cubeMapSideLength, cubeMapSideLength });
 
-		if (_vulkan.createPipeline(panoramaToCubeMapPipeline, panormaToCubePipeline.getInfo()) != VK_SUCCESS)
+		if (_vulkan.createPipeline(panoramaToCubeMapPipeline, panoramaToCubePipeline.getInfo()) != VK_SUCCESS)
 		{
 			return Result::VulkanError;
 		}
