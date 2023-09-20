@@ -621,7 +621,7 @@ Result panoramaToCubemap(vkHelper& _vulkan, const VkCommandBuffer _commandBuffer
 		GraphicsPipelineDesc panormaToCubePipeline;
 
 		panormaToCubePipeline.addShaderStage(fullscreenVertexShader, VK_SHADER_STAGE_VERTEX_BIT, "main");
-		panormaToCubePipeline.addShaderStage(panoramaToCubeMapFragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT, "panoramaToCubeMap");
+		panormaToCubePipeline.addShaderStage(panoramaToCubeMapFragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT, "main");
 
 		panormaToCubePipeline.setRenderPass(renderPass);
 		panormaToCubePipeline.setPipelineLayout(panoramaPipelineLayout);
@@ -900,7 +900,7 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 		GraphicsPipelineDesc filterCubeMapPipelineDesc;
 
 		filterCubeMapPipelineDesc.addShaderStage(fullscreenVertexShader, VK_SHADER_STAGE_VERTEX_BIT, "main");
-		filterCubeMapPipelineDesc.addShaderStage(filterCubeMapFragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT, "filterCubeMap");
+		filterCubeMapPipelineDesc.addShaderStage(filterCubeMapFragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT, "main");
 
 		filterCubeMapPipelineDesc.setRenderPass(renderPass);
 		filterCubeMapPipelineDesc.setPipelineLayout(filterPipelineLayout);
