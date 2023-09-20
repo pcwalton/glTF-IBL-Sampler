@@ -1,6 +1,3 @@
-[submodule "thirdparty/stb"]
-	path = thirdparty/stb
-	url = https://github.com/nothings/stb.git
 [submodule "thirdparty/glslang"]
 	path = thirdparty/glslang
 	url = https://github.com/KhronosGroup/glslang.git
