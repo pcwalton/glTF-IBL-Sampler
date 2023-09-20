@@ -17,6 +17,12 @@ IBLLib::vkHelper::~vkHelper()
 VkResult IBLLib::vkHelper::initialize(uint32_t _phyDeviceIndex, uint32_t _descriptorPoolSizeFactor, bool _debugOutput)
 {
 	VkResult res = VK_RESULT_MAX_ENUM;
+	if ((res = volkInitialize()) != VK_SUCCESS)
+	{
+		fprintf(stderr, "Failed to initialize Vulkan\n");
+		return res;
+	}
+
 	m_debugOutputEnabled = _debugOutput;
 	//
 	// Create instance
@@ -82,6 +88,8 @@ VkResult IBLLib::vkHelper::initialize(uint32_t _phyDeviceIndex, uint32_t _descri
 			printf("Failed to create Vulkan instance [%u]\n", res);
 			return res;
 		}
+
+		volkLoadInstance(m_instance);
 
 		printf("Vulkan instance created\n");
 	}

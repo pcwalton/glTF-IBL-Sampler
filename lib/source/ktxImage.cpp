@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#include <vulkan/vulkan.h>
+#include <volk.h>
 
 #include <cassert>
 #include <cstring>

@@ -70,9 +70,6 @@ if (IBLSAMPLER_EXPORT_SHADERS)
     endif()
 endif()
 
-#dependencies
-find_package(Vulkan REQUIRED)
-
 #lib sources
 add_sources("lib/source/*.cpp" lib_sources)
 add_sources("lib/source/*.h" lib_sources)
@@ -89,13 +86,15 @@ target_include_directories(GltfIblSampler PUBLIC "${lib_include_dirs}")
 # specify the public headers (will be copied to `include` in install step)
 set_target_properties(GltfIblSampler PROPERTIES PUBLIC_HEADER "${lib_headers}")
 
-# Vulkan
-target_link_libraries(GltfIblSampler PRIVATE Vulkan::Vulkan)
+# Volk
+add_subdirectory("thirdparty/volk")
+target_link_libraries(GltfIblSampler PRIVATE volk)
 
 #cli project
 add_sources("cli/source/*.cpp" "cli_sources")
 add_executable(cli "${cli_sources}")
 target_link_libraries(cli PUBLIC GltfIblSampler)
+target_link_libraries(cli PRIVATE volk)
 
 message(STATUS "")
 install(TARGETS cli GltfIblSampler)

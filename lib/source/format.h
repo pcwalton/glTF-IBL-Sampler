@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include <vulkan/vulkan.h>
+#include <volk.h>
 
 namespace IBLLib
 {
