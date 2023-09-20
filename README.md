@@ -13,7 +13,10 @@ Algorithm references:
 
 ### Lite version
 
-This "lite" version drops the external dependencies on KTX2-Software and `glslang`, to make the library easier to integrate into external projects.
+In order to make the library easier to integrate into external projects and
+other build systems, this "lite" version drops all external dependencies on
+KTX2-Software, `glslang`, and the Vulkan SDK. It also eliminates Git submodules
+in favor of Git subtrees, so that the repository is fully self-contained.
 
 <!--
 The official Khronos [glTF Sample Viewer](https://github.com/KhronosGroup/glTF-Sample-Viewer) is used to clarify, how e.g. a physically-based material has to be lit and rendered. In the [glTF 2.0 reference](https://www.khronos.org/files/gltf20-reference-guide.pdf), the default material model is the Metallic-Roughness-Model. 
@@ -36,10 +39,8 @@ The pre-filtering will use the algorithms noted in the [glTF Sample Environments
 
 The project provides a cmake file to generate respective build files.
 
-Third Party Requirements:
-
-* [Vulkan SDK](https://vulkan.lunarg.com)
-* [STB](https://github.com/nothings/stb) image library (git submodule, no need to install)
+There are no third-party requirements, other than a C++ compiler and CMake;
+everything in this repository is self-contained.
 
 The glTF-IBL-Sampler consists of two projects: lib (shared library) and cli (executable). 
 
