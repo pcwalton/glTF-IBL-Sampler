@@ -1,6 +1,5 @@
 #include "GltfIblSampler.h"
 #include "vkHelper.h"
-#include "ShaderCompiler.h"
 #include "STBImage.h"
 #include "FileHelper.h"
 #include "ktxImage.h"
@@ -12,22 +11,21 @@
 namespace IBLLib
 {
 
-constexpr auto filterFragmentShader =
-#include "shaders/filter.frag"
-;
+const uint32_t panoramaToCubeMapShaderSource[] = {
+#include "shaders/gen/panorama_to_cube_map.frag.inc"
+};
 
-constexpr auto primitiveVertexShader =
-#include "shaders/primitive.vert"
-;
+const uint32_t filterCubeMapShaderSource[] = {
+#include "shaders/gen/filter_cube_map.frag.inc"
+};
 
-Result compileShader(vkHelper& _vulkan, const char* _shaderText, const char* _entryPoint, VkShaderModule& _outModule, ShaderCompiler::Stage _stage)
+const uint32_t primitiveShaderSource[] = {
+#include "shaders/gen/primitive.vert.inc"
+};
+
+Result compileShader(vkHelper& _vulkan, VkShaderModule& _outModule, const uint32_t *_spvData, size_t _spvWordLength)
 {
-	std::vector<uint32_t> outSpvBlob;
-
-	if (ShaderCompiler::instance().compile(_shaderText, _entryPoint, _stage, outSpvBlob) == false)
-	{
-		return Result::ShaderCompilationFailed;
-	}
+	std::vector<uint32_t> outSpvBlob(&_spvData[0], &_spvData[_spvWordLength]);
 
 	if (_vulkan.loadShaderModule(_outModule, outSpvBlob.data(), outSpvBlob.size() * 4) != VK_SUCCESS)
 	{
@@ -556,7 +554,12 @@ Result panoramaToCubemap(vkHelper& _vulkan, const VkCommandBuffer _commandBuffer
 	const VkFormat format = textureInfo->format;
 
 	VkShaderModule panoramaToCubeMapFragmentShader = VK_NULL_HANDLE;
-	if ((res = compileShader(_vulkan, filterFragmentShader, "panoramaToCubeMap", panoramaToCubeMapFragmentShader, ShaderCompiler::Stage::Fragment)) != Result::Success)
+	if ((res = compileShader(
+		_vulkan,
+		panoramaToCubeMapFragmentShader,
+		panoramaToCubeMapShaderSource,
+		sizeof(panoramaToCubeMapShaderSource) / sizeof(panoramaToCubeMapShaderSource[0]))) !=
+		Result::Success)
 	{
 		return res;
 	}
@@ -699,13 +702,23 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 	}
 
 	VkShaderModule fullscreenVertexShader = VK_NULL_HANDLE;
-	if ((res = compileShader(vulkan, primitiveVertexShader, "main", fullscreenVertexShader, ShaderCompiler::Stage::Vertex)) != Result::Success)
+	if ((res = compileShader(
+		vulkan,
+		fullscreenVertexShader,
+		primitiveShaderSource,
+		sizeof(primitiveShaderSource) / sizeof(primitiveShaderSource[0]))) !=
+		Result::Success)
 	{
 		return res;
 	}
 
 	VkShaderModule filterCubeMapFragmentShader = VK_NULL_HANDLE;
-	if ((res = compileShader(vulkan, filterFragmentShader, "filterCubeMap", filterCubeMapFragmentShader, ShaderCompiler::Stage::Fragment)) != Result::Success)
+	if ((res = compileShader(
+		vulkan,
+		filterCubeMapFragmentShader,
+		filterCubeMapShaderSource,
+		sizeof(filterCubeMapShaderSource) / sizeof(filterCubeMapShaderSource[0]))) !=
+		Result::Success)
 	{
 		return res;
 	}

@@ -83,31 +83,11 @@ add_include_folder("lib/include" lib_include_dirs)
 set(STB_INCLUDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/stb/" CACHE STRING "")
 set(lib_include_dirs "${lib_include_dirs};${STB_INCLUDE_PATH}")
 
-# glslang
-option(BUILD_EXTERNAL "Build external dependencies in /External" OFF)
-option(SKIP_GLSLANG_INSTALL "Skip installation" ON)
-set(ENABLE_GLSLANG_INSTALL OFF)
-option(ENABLE_SPVREMAPPER "Enables building of SPVRemapper" OFF)
-option(ENABLE_GLSLANG_BINARIES "Builds glslangValidator and spirv-remap" OFF)
-option(ENABLE_GLSLANG_WEB "Reduces glslang to minimum needed for web use" OFF)
-option(ENABLE_GLSLANG_WEB_DEVEL "For ENABLE_GLSLANG_WEB builds, enables compilation error messages" OFF)
-option(ENABLE_EMSCRIPTEN_SINGLE_FILE "If using Emscripten, enables SINGLE_FILE build" OFF)
-option(ENABLE_EMSCRIPTEN_ENVIRONMENT_NODE "If using Emscripten, builds to run on Node instead of Web" OFF)
-option(ENABLE_HLSL "Enables HLSL input support" OFF)
-
-if(NOT TARGET glslang) 
-    # we need to guard these for the case that a higher level project already added the target
-    add_subdirectory(thirdparty/glslang)
-endif()
-
 #lib project
 add_library(GltfIblSampler SHARED ${lib_sources} ${lib_headers})
 target_include_directories(GltfIblSampler PUBLIC "${lib_include_dirs}")
 # specify the public headers (will be copied to `include` in install step)
 set_target_properties(GltfIblSampler PROPERTIES PUBLIC_HEADER "${lib_headers}")
-
-# glslang
-target_link_libraries(GltfIblSampler PRIVATE glslang SPIRV)
 
 # Vulkan
 target_link_libraries(GltfIblSampler PRIVATE Vulkan::Vulkan)
