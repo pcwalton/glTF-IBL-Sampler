@@ -4,8 +4,3 @@
 [submodule "thirdparty/glslang"]
 	path = thirdparty/glslang
 	url = https://github.com/KhronosGroup/glslang.git
-[submodule "thirdparty/KTX-Software"]
-    path = thirdparty/KTX-Software
-    url = https://github.com/KhronosGroup/KTX-Software.git
-    branch = master
-	fetchrecursesubmodules = true

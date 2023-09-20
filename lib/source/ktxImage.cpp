@@ -1,120 +1,400 @@
+#include "khr_df.h"
 #include "ktxImage.h"
 
 #include <stdio.h>
 
-#include <ktx.h>
-#include <ktxvulkan.h>
 #include <vulkan/vulkan.h>
 
 #include <cassert>
+#include <cstring>
+#include <iostream>
+#include <fstream>
 
 using namespace IBLLib;
 
-KtxImage::KtxImage()
+namespace {
+
+const uint8_t KTX_IDENTIFIER[12] = {
+	0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A,
+};
+
+struct KTXIndex {
+	uint32_t dfdByteOffset;
+	uint32_t dfdByteLength;
+	uint32_t kvdByteOffset;
+	uint32_t kvdByteLength;
+	uint64_t sgdByteOffset;
+	uint64_t sgdByteLength;
+};
+
+// TODO
+uint32_t toLittleEndian(uint32_t n)
 {
+	return n;
 }
+
+// TODO
+uint64_t toLittleEndian(uint64_t n)
+{
+	return n;
+}
+
+// Copied and pasted from KTX-Software/lib/dfdutils/createdfd.c
+namespace dfd {
+
+/** Qualifier suffix to the format, in Vulkan terms. */
+enum VkSuffix {
+    s_UNORM,   /*!< Unsigned normalized format. */
+    s_SNORM,   /*!< Signed normalized format. */
+    s_USCALED, /*!< Unsigned scaled format. */
+    s_SSCALED, /*!< Signed scaled format. */
+    s_UINT,    /*!< Unsigned integer format. */
+    s_SINT,    /*!< Signed integer format. */
+    s_SFLOAT,  /*!< Signed float format. */
+    s_UFLOAT,  /*!< Unsigned float format. */
+    s_SRGB     /*!< sRGB normalized format. */
+};
+
+typedef enum { i_COLOR, i_NON_COLOR } channels_infotype;
+
+// This doesn't include the length word.
+size_t dfdWordSize(int numSamples)
+{
+	return KHR_DF_WORD_SAMPLESTART + numSamples * KHR_DF_WORD_SAMPLEWORDS;
+}
+
+static uint32_t *writeHeader(int numSamples, int bytes, int suffix,
+                             channels_infotype infotype)
+{
+    uint32_t *DFD = (uint32_t *) malloc(sizeof(uint32_t) *
+                                        (1 + KHR_DF_WORD_SAMPLESTART +
+                                         numSamples * KHR_DF_WORD_SAMPLEWORDS));
+    uint32_t* BDFD = DFD+1;
+    DFD[0] = sizeof(uint32_t) *
+        (1 + KHR_DF_WORD_SAMPLESTART +
+         numSamples * KHR_DF_WORD_SAMPLEWORDS);
+    BDFD[KHR_DF_WORD_VENDORID] =
+        (KHR_DF_VENDORID_KHRONOS << KHR_DF_SHIFT_VENDORID) |
+        (KHR_DF_KHR_DESCRIPTORTYPE_BASICFORMAT << KHR_DF_SHIFT_DESCRIPTORTYPE);
+    BDFD[KHR_DF_WORD_VERSIONNUMBER] =
+        (KHR_DF_VERSIONNUMBER_LATEST << KHR_DF_SHIFT_VERSIONNUMBER) |
+        (((uint32_t)sizeof(uint32_t) *
+          (KHR_DF_WORD_SAMPLESTART +
+           numSamples * KHR_DF_WORD_SAMPLEWORDS)
+          << KHR_DF_SHIFT_DESCRIPTORBLOCKSIZE));
+    BDFD[KHR_DF_WORD_MODEL] =
+        ((KHR_DF_MODEL_RGBSDA << KHR_DF_SHIFT_MODEL) | /* Only supported model */
+         (KHR_DF_FLAG_ALPHA_STRAIGHT << KHR_DF_SHIFT_FLAGS));
+    if (infotype == i_COLOR) {
+        BDFD[KHR_DF_WORD_PRIMARIES] |= KHR_DF_PRIMARIES_BT709 << KHR_DF_SHIFT_PRIMARIES; /* Assumed */
+    } else {
+        BDFD[KHR_DF_WORD_PRIMARIES] |= KHR_DF_PRIMARIES_UNSPECIFIED << KHR_DF_SHIFT_PRIMARIES;
+    }
+    if (suffix == s_SRGB) {
+        BDFD[KHR_DF_WORD_TRANSFER] |= KHR_DF_TRANSFER_SRGB << KHR_DF_SHIFT_TRANSFER;
+    } else {
+        BDFD[KHR_DF_WORD_TRANSFER] |= KHR_DF_TRANSFER_LINEAR << KHR_DF_SHIFT_TRANSFER;
+    }
+    BDFD[KHR_DF_WORD_TEXELBLOCKDIMENSION0] = 0; /* Only 1x1x1x1 texel blocks supported */
+    BDFD[KHR_DF_WORD_BYTESPLANE0] = bytes; /* bytesPlane0 = bytes, bytesPlane3..1 = 0 */
+    BDFD[KHR_DF_WORD_BYTESPLANE4] = 0; /* bytesPlane7..5 = 0 */
+    return DFD;
+}
+
+static uint32_t setChannelFlags(uint32_t channel, enum VkSuffix suffix)
+{
+    switch (suffix) {
+    case s_UNORM: break;
+    case s_SNORM:
+        channel |=
+            KHR_DF_SAMPLE_DATATYPE_SIGNED;
+        break;
+    case s_USCALED: break;
+    case s_SSCALED:
+        channel |=
+            KHR_DF_SAMPLE_DATATYPE_SIGNED;
+        break;
+    case s_UINT: break;
+    case s_SINT:
+        channel |=
+            KHR_DF_SAMPLE_DATATYPE_SIGNED;
+        break;
+    case s_SFLOAT:
+        channel |=
+            KHR_DF_SAMPLE_DATATYPE_FLOAT |
+            KHR_DF_SAMPLE_DATATYPE_SIGNED;
+        break;
+    case s_UFLOAT:
+        channel |=
+            KHR_DF_SAMPLE_DATATYPE_FLOAT;
+        break;
+    case s_SRGB:
+        if (channel == KHR_DF_CHANNEL_RGBSDA_ALPHA) {
+            channel |= KHR_DF_SAMPLE_DATATYPE_LINEAR;
+        }
+        break;
+    }
+    return channel;
+}
+
+static void writeSample(uint32_t *DFD, int sampleNo, int channel,
+                        int bits, int offset,
+                        int topSample, int bottomSample, enum VkSuffix suffix)
+{
+    // Use this to avoid type-punning complaints from the gcc optimizer
+    // with -Wall.
+    union {
+        uint32_t i;
+        float f;
+    } lower, upper;
+    uint32_t *sample = DFD + 1 + KHR_DF_WORD_SAMPLESTART + sampleNo * KHR_DF_WORD_SAMPLEWORDS;
+    if (channel == 3) channel = KHR_DF_CHANNEL_RGBSDA_ALPHA;
+
+    if (channel == 3) channel = KHR_DF_CHANNEL_RGBSDA_ALPHA;
+    channel = setChannelFlags(channel, suffix);
+
+    sample[KHR_DF_SAMPLEWORD_BITOFFSET] =
+        (offset << KHR_DF_SAMPLESHIFT_BITOFFSET) |
+        ((bits - 1) << KHR_DF_SAMPLESHIFT_BITLENGTH) |
+        (channel << KHR_DF_SAMPLESHIFT_CHANNELID);
+
+    sample[KHR_DF_SAMPLEWORD_SAMPLEPOSITION_ALL] = 0;
+
+    switch (suffix) {
+    case s_UNORM:
+    case s_SRGB:
+    default:
+        if (bits > 32) {
+            upper.i = 0xFFFFFFFFU;
+        } else {
+            upper.i = (uint32_t)((1U << bits) - 1U);
+        }
+        lower.i = 0U;
+        break;
+    case s_SNORM:
+        if (bits > 32) {
+            upper.i = 0x7FFFFFFF;
+        } else {
+            upper.i = topSample ? (1U << (bits - 1)) - 1 : (1U << bits) - 1;
+        }
+        lower.i = ~upper.i;
+        if (bottomSample) lower.i += 1;
+        break;
+    case s_USCALED:
+    case s_UINT:
+        upper.i = bottomSample ? 1U : 0U;
+        lower.i = 0U;
+        break;
+    case s_SSCALED:
+    case s_SINT:
+        upper.i = bottomSample ? 1U : 0U;
+        lower.i = ~0U;
+        break;
+    case s_SFLOAT:
+        upper.f = 1.0f;
+        lower.f = -1.0f;
+        break;
+    case s_UFLOAT:
+        upper.f = 1.0f;
+        lower.f = 0.0f;
+        break;
+    }
+    sample[KHR_DF_SAMPLEWORD_SAMPLELOWER] = lower.i;
+    sample[KHR_DF_SAMPLEWORD_SAMPLEUPPER] = upper.i;
+}
+
+/**
+ * @~English
+ * @brief Create a Data Format Descriptor for an unpacked format.
+ *
+ * @param bigEndian Set to 1 for big-endian byte ordering and
+                    0 for little-endian byte ordering.
+ * @param numChannels The number of color channels.
+ * @param bytes The number of bytes per channel.
+ * @param redBlueSwap Normally channels appear in consecutive R, G, B, A order
+ *                    in memory; redBlueSwap inverts red and blue, allowing
+ *                    B, G, R, A.
+ * @param suffix Indicates the format suffix for the type.
+ *
+ * @return A data format descriptor in malloc'd data. The caller is responsible
+ *         for freeing the descriptor.
+ **/
+uint32_t *createDFDUnpacked(int bigEndian, int numChannels, int bytes,
+                            int redBlueSwap, enum VkSuffix suffix)
+{
+    uint32_t *DFD;
+    if (bigEndian) {
+        int channelCounter, channelByte;
+        /* Number of samples = number of channels * bytes per channel */
+        DFD = writeHeader(numChannels * bytes, numChannels * bytes, suffix, i_COLOR);
+        /* First loop over the channels */
+        for (channelCounter = 0; channelCounter < numChannels; ++channelCounter) {
+            int channel = channelCounter;
+            if (redBlueSwap && (channel == 0 || channel == 2)) {
+                channel ^= 2;
+            }
+            /* Loop over the bytes that constitute a channel */
+            for (channelByte = 0; channelByte < bytes; ++channelByte) {
+                writeSample(DFD, channelCounter * bytes + channelByte, channel,
+                            8, 8 * (channelCounter * bytes + bytes - channelByte - 1),
+                            channelByte == bytes-1, channelByte == 0, suffix);
+            }
+        }
+
+    } else { /* Little-endian */
+
+        int sampleCounter;
+        /* One sample per channel */
+        DFD = writeHeader(numChannels, numChannels * bytes, suffix, i_COLOR);
+        for (sampleCounter = 0; sampleCounter < numChannels; ++sampleCounter) {
+            int channel = sampleCounter;
+            if (redBlueSwap && (channel == 0 || channel == 2)) {
+                channel ^= 2;
+            }
+            writeSample(DFD, sampleCounter, channel,
+                        8 * bytes, 8 * sampleCounter * bytes,
+                        1, 1, suffix);
+        }
+    }
+    return DFD;
+}
+
+}	// end namespace dfd
+
+}	// end anonymous namespace
 
 KtxImage::KtxImage(uint32_t _width, uint32_t _height, VkFormat _vkFormat, uint32_t _levels, bool _isCubeMap)
 {
-		// fill the create info for ktx2 (we don't support ktx 1)
-	ktxTextureCreateInfo createInfo;
-	createInfo.vkFormat = _vkFormat;
-	createInfo.baseWidth = _width;
-	createInfo.baseHeight = _height;
-	createInfo.baseDepth = 1u;
-	createInfo.numDimensions = 2u;
-	createInfo.numLevels = _levels;
-	createInfo.numLayers = 1u;
-	createInfo.numFaces = _isCubeMap ? 6u : 1u;
-	createInfo.isArray = KTX_FALSE;
-	createInfo.generateMipmaps = KTX_FALSE;
+	uint32_t *dfdData;
+	size_t bytesPerPixel;
 
-	KTX_error_code result;
-	result = ktxTexture2_Create(&createInfo,
-															KTX_TEXTURE_CREATE_ALLOC_STORAGE,
-															&m_ktxTexture);
-	if(result != KTX_SUCCESS)
-	{
-		printf("Could not create ktx texture\n");
-		m_ktxTexture = nullptr;
-	}
-}
-
-KtxImage::~KtxImage()
-{
-	ktxTexture_Destroy(ktxTexture(m_ktxTexture));
-}
-
-Result KtxImage::loadKtx2(const char* _pFilePath)
-{
-	assert(((void)"m_ktxTexture must be uninitialized.", m_ktxTexture != nullptr));
-
-	KTX_error_code result;
-	result = ktxTexture2_CreateFromNamedFile(_pFilePath,
-																					KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
-																					&m_ktxTexture);
-
-	if(result != KTX_SUCCESS)
-	{
-		printf("Could not load ktx file at %s \n", _pFilePath);
+	switch (_vkFormat) {
+	case VK_FORMAT_R32G32B32A32_SFLOAT:
+		dfdData = dfd::createDFDUnpacked(0, 4, 4, 0, dfd::s_SFLOAT);
+		bytesPerPixel = 16;
+		break;
+	case VK_FORMAT_R8G8B8A8_UNORM:
+		dfdData = dfd::createDFDUnpacked(0, 4, 1, 0, dfd::s_UNORM);
+		bytesPerPixel = 4;
+		break;
+	default:
+		assert(0 && "Unsupported Vulkan format");
 	}
 
-	return Result::Success;
+	memcpy(mHeader.identifier, KTX_IDENTIFIER, sizeof(KTX_IDENTIFIER));
+	mHeader.vkFormat = _vkFormat;
+	mHeader.typeSize = 4;
+	mHeader.pixelWidth = _width;
+	mHeader.pixelHeight = _height;
+	mHeader.pixelDepth = 0;
+	mHeader.layerCount = 0;
+	mHeader.faceCount = _isCubeMap ? 6 : 1;
+	mHeader.levelCount = _levels;
+	mHeader.supercompressionScheme = 0;
+	mData.insert(
+		mData.end(),
+		reinterpret_cast<uint8_t *>(&mHeader),
+		reinterpret_cast<uint8_t *>(&mHeader + 1));
+
+	size_t indexOffset = mData.size();
+	KTXIndex index = {0};
+	mData.insert(
+		mData.end(), reinterpret_cast<uint8_t *>(&index), reinterpret_cast<uint8_t *>(&index + 1));
+
+	// Write placeholder level indices.
+	size_t levelIndexOffset = mData.size();
+	mLevelIndices.resize(_levels);
+	mData.insert(
+		mData.end(),
+		reinterpret_cast<uint8_t *>(&mLevelIndices[0]),
+		reinterpret_cast<uint8_t *>(&mLevelIndices[0] + _levels));
+
+	index.dfdByteOffset = static_cast<uint32_t>(mData.size());
+	uint32_t wordSize = static_cast<uint32_t>(dfd::dfdWordSize(4));
+	index.dfdByteLength = (wordSize + 1) * 4;
+	mData.insert(
+		mData.end(),
+		reinterpret_cast<uint8_t *>(dfdData),
+		reinterpret_cast<uint8_t *>(dfdData + wordSize));
+
+	index.kvdByteOffset = 0;
+	index.kvdByteLength = 0;
+	index.sgdByteOffset = 0;
+	index.sgdByteLength = 0;
+	memcpy(&mData[indexOffset], &index, sizeof(index));
+
+	// Compute mip sizes.
+	size_t mipWidth = mHeader.pixelWidth, mipHeight = mHeader.pixelHeight;
+	for (size_t mip = 0; mip < _levels; mip++) {
+		size_t mipLength = mipWidth * mipHeight * mHeader.faceCount * bytesPerPixel;
+
+		mLevelIndices[mip].byteLength = mLevelIndices[mip].uncompressedByteLength = mipLength;
+
+		mipWidth /= 2;
+		mipHeight /= 2;
+	}
+
+	// Compute mip lengths.
+	size_t mipOffset = mData.size();
+	for (int mip = _levels - 1; mip >= 0; mip--) {
+		if ((mipOffset & 0xf) != 0)
+			mipOffset += 16 - (mipOffset & 0xf);
+		mLevelIndices[mip].byteOffset = mipOffset;
+		mipOffset += mLevelIndices[mip].byteLength;
+	}
+
+	// Copy in mip level data.
+	memcpy(&mData[levelIndexOffset], &mLevelIndices[0], _levels * sizeof(mLevelIndices[0]));
+
+	// Reserve space for mip levels.
+	mData.resize(mipOffset);
 }
 
 Result KtxImage::writeFace(const std::vector<uint8_t>& _inData, uint32_t _side, uint32_t _level)
 {
-	KTX_error_code result = ktxTexture_SetImageFromMemory(ktxTexture(m_ktxTexture), _level, 0u, _side, _inData.data(), _inData.size());
+	assert(_side < mHeader.faceCount && "Side out of range");
+	assert(_level < mHeader.levelCount && "Level out of range");
 
-	if(result != KTX_SUCCESS)
-	{
-		printf("Could not write image data to ktx texture\n");
-		return Result::KtxError;
-	}
+	const KTXLevelIndex &levelIndex = mLevelIndices[_level];
+	size_t mipFaceSize = levelIndex.uncompressedByteLength / mHeader.faceCount;
+	assert(_inData.size() == mipFaceSize && "Face size has an incorrect length");
+
+	memcpy(&mData[levelIndex.byteOffset], &_inData[0], mipFaceSize);
 
 	return Success;
 }
 
 Result KtxImage::save(const char* _pathOut)
 {
-
-	KTX_error_code result = ktxTexture_WriteToNamedFile(ktxTexture(m_ktxTexture), _pathOut);
-
-	if(result != KTX_SUCCESS)
-	{
-		printf("Could not write ktx file\n");
-		return Result::KtxError;
-	}
+	std::ofstream out;
+	out.open(_pathOut, std::ios::out | std::ios::trunc | std::ios::binary);
+	out.write((const char *)&mData[0], mData.size());
+	out.close();
 
 	return Success;
 }
 
 uint32_t KtxImage::getWidth() const
 {
-	assert(((void)"Ktx texture must be initialized", m_ktxTexture == nullptr));
-	return m_ktxTexture->baseWidth;
+	return mHeader.pixelWidth;
 }
 
 uint32_t KtxImage::getHeight() const
 {
-	assert(((void)"Ktx texture must be initialized", m_ktxTexture == nullptr));
-	return m_ktxTexture->baseHeight;
+	return mHeader.pixelHeight;
 }
 
 uint32_t KtxImage::getLevels() const
 {
-	assert(((void)"Ktx texture must be initialized", m_ktxTexture == nullptr));
-	return m_ktxTexture->numLevels;
+	return mHeader.levelCount;
 }
 
 bool KtxImage::isCubeMap() const
 {
-	assert(((void)"Ktx texture must be initialized", m_ktxTexture == nullptr));
-	return m_ktxTexture->numFaces == 6u;
+	return mHeader.faceCount == 6;
 }
 
 VkFormat KtxImage::getFormat() const
 {
-	assert(((void)"Ktx texture must be initialized", m_ktxTexture == nullptr));
-	return static_cast<VkFormat>(m_ktxTexture->vkFormat);
+	return static_cast<VkFormat>(mHeader.vkFormat);
 }
