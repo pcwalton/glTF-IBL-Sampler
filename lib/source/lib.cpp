@@ -1162,3 +1162,23 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 
 	return Result::Success;
 }
+
+extern "C"
+{
+
+IBLLib::Result IBLSample(
+	const char* _inputPath,
+	const char* _outputPathCubeMap,
+	const char* _outputPathLUT,
+	IBLLib::Distribution _distribution,
+	unsigned int  _cubemapResolution,
+	unsigned int _mipmapCount,
+	unsigned int _sampleCount,
+	IBLLib::OutputFormat _targetFormat,
+	float _lodBias,
+	bool _debugOutput)
+{
+	return IBLLib::sample(_inputPath, _outputPathCubeMap, _outputPathLUT, _distribution, _cubemapResolution, _mipmapCount, _sampleCount, _targetFormat, _lodBias, _debugOutput);
+}
+
+}

@@ -20,3 +20,21 @@ namespace IBLLib
 
 	Result sample(const char* _inputPath, const char* _outputPathCubeMap, const char* _outputPathLUT, Distribution _distribution, unsigned int  _cubemapResolution, unsigned int _mipmapCount, unsigned int _sampleCount, OutputFormat _targetFormat, float _lodBias, bool _debugOutput);
 } // !IBLLib
+
+extern "C"
+{
+
+// Cross-compiler-ABI version of the above.
+IBLLib::Result IBLSample(
+	const char* _inputPath,
+	const char* _outputPathCubeMap,
+	const char* _outputPathLUT,
+	IBLLib::Distribution _distribution,
+	unsigned int  _cubemapResolution,
+	unsigned int _mipmapCount,
+	unsigned int _sampleCount,
+	IBLLib::OutputFormat _targetFormat,
+	float _lodBias,
+	bool _debugOutput);
+
+}	// extern "C"
