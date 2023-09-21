@@ -8,9 +8,10 @@ layout(set = 0, binding = 0) uniform sampler2D uPanorama;
 layout(set = 0, binding = 1) uniform samplerCube uCubeMap;
 
 // enum
-const uint cLambertian = 0;
-const uint cGGX = 1;
-const uint cCharlie = 2;
+const uint cNone = 0;
+const uint cLambertian = 1;
+const uint cGGX = 2;
+const uint cCharlie = 3;
 
 layout(push_constant) uniform FilterParameters {
   float roughness;
