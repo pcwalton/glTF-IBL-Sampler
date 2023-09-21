@@ -1237,6 +1237,17 @@ void IBLLib::vkHelper::imageBarrier(VkCommandBuffer _cmdBuffer, VkImage _image,
 									VkPipelineStageFlags _dstStage, VkAccessFlags _dstAccess, 
 									VkImageSubresourceRange _subresourceRange) const
 {
+	for (const Image& img : m_images)
+	{
+		if (img.image == _image)
+		{
+			if (_subresourceRange.layerCount == 0)
+				_subresourceRange.layerCount = img.info.arrayLayers;
+			if (_subresourceRange.levelCount == 0)
+				_subresourceRange.levelCount = img.info.mipLevels;
+		}
+	}
+
 	VkImageMemoryBarrier barrier{};
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	barrier.oldLayout = oldLayout;

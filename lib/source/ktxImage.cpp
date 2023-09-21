@@ -14,19 +14,6 @@ using namespace IBLLib;
 
 namespace {
 
-const uint8_t KTX_IDENTIFIER[12] = {
-	0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A,
-};
-
-struct KTXIndex {
-	uint32_t dfdByteOffset;
-	uint32_t dfdByteLength;
-	uint32_t kvdByteOffset;
-	uint32_t kvdByteLength;
-	uint64_t sgdByteOffset;
-	uint64_t sgdByteLength;
-};
-
 // TODO
 uint32_t toLittleEndian(uint32_t n)
 {

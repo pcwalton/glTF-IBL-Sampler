@@ -102,7 +102,7 @@ namespace IBLLib
 			VkImageLayout _oldLayout, VkImageLayout _newLayout,
 			VkPipelineStageFlags _srcStage, VkAccessFlags _srcAccess,
 			VkPipelineStageFlags _dstStage, VkAccessFlags _dstAccess,
-			VkImageSubresourceRange _subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u}) const;
+			VkImageSubresourceRange _subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 0u, 0u}) const;
 
 		void transitionImageToTransferWrite(VkCommandBuffer _cmdBuffer, VkImage _image, VkImageLayout _oldLayout = VK_IMAGE_LAYOUT_UNDEFINED) const
 		{
