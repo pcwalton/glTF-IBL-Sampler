@@ -359,7 +359,7 @@ Result KtxImage::writeFace(const std::vector<uint8_t>& _inData, uint32_t _side, 
 	size_t mipFaceSize = levelIndex.uncompressedByteLength / mHeader.faceCount;
 	assert(_inData.size() == mipFaceSize && "Face size has an incorrect length");
 
-	memcpy(&mData[levelIndex.byteOffset], &_inData[0], mipFaceSize);
+	memcpy(&mData[levelIndex.byteOffset + mipFaceSize * _side], &_inData[0], mipFaceSize);
 
 	return Success;
 }
