@@ -8,11 +8,6 @@
 #include <fstream>
 #include <stdio.h>
 #include <cstring>
-#include "renderdoc_app.h"
-
-#define NOMINMAX
-#include <windows.h>
-
 #include <cassert>
 
 #include "format.h"
@@ -771,23 +766,6 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 		return Result::VulkanInitializationFailed;
 	}
 
-	// START RENDERDOC
-
-	RENDERDOC_API_1_1_2 *rdoc_api = NULL;
-
-	// At init, on windows
-	if(HMODULE mod = GetModuleHandleA("renderdoc.dll"))
-	{
-		pRENDERDOC_GetAPI RENDERDOC_GetAPI =
-			(pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
-		int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
-		assert(ret == 1);
-	}
-
-	if(rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
-
-	// END RENDERDOC
-
 	VkImage panoramaImage;
 	bool inputIsCubemap;
 	uint32_t maxMipLevels = 0;
@@ -1181,8 +1159,6 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 			return Result::VulkanError;
 		}
 	}
-
-	if(rdoc_api) rdoc_api->EndFrameCapture(NULL, NULL);
 
 	return Result::Success;
 }
