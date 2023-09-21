@@ -83,10 +83,12 @@ set(lib_include_dirs "${lib_include_dirs};${STB_INCLUDE_PATH}")
 #lib project
 add_library(GltfIblSampler SHARED ${lib_sources} ${lib_headers})
 target_include_directories(GltfIblSampler PUBLIC "${lib_include_dirs}")
+target_include_directories(GltfIblSampler PRIVATE "thirdparty/Vulkan-Headers/include")
 # specify the public headers (will be copied to `include` in install step)
 set_target_properties(GltfIblSampler PROPERTIES PUBLIC_HEADER "${lib_headers}")
 
 # Volk
+set(VULKAN_HEADERS_INSTALL_DIR "../Vulkan-Headers")
 add_subdirectory("thirdparty/volk")
 target_link_libraries(GltfIblSampler PRIVATE volk)
 
