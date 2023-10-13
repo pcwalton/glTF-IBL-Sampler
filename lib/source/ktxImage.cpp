@@ -246,6 +246,142 @@ uint32_t *createDFDUnpacked(int bigEndian, int numChannels, int bytes,
     return DFD;
 }
 
+/**
+ * @~English
+ * @brief Create a Data Format Descriptor for a packed format.
+ *
+ * @param bigEndian Big-endian flag: Set to 1 for big-endian byte ordering and
+ *                  0 for little-endian byte ordering.
+ * @param numChannels The number of color channels.
+ * @param bits[] An array of length numChannels.
+ *               Each entry is the number of bits composing the channel, in
+ *               order starting at bit 0 of the packed type.
+ * @param channels[] An array of length numChannels.
+ *                   Each entry enumerates the channel type: 0 = red, 1 = green,
+ *                   2 = blue, 15 = alpha, in order starting at bit 0 of the
+ *                   packed type. These values match channel IDs for RGBSDA in
+ *                   the Khronos Data Format header. To simplify iteration
+ *                   through channels, channel id 3 is a synonym for alpha.
+ * @param suffix Indicates the format suffix for the type.
+ *
+ * @return A data format descriptor in malloc'd data. The caller is responsible
+ *         for freeing the descriptor.
+ **/
+uint32_t *createDFDPacked(int bigEndian, int numChannels,
+                          int bits[], int channels[],
+                          enum VkSuffix suffix)
+{
+    uint32_t *DFD = 0;
+    if (numChannels == 6) {
+        /* Special case E5B9G9R9 */
+        DFD = writeHeader(numChannels, 4, s_UFLOAT, i_COLOR);
+        writeSample(DFD, 0, 0,
+                    9, 0,
+                    1, 1, s_UNORM);
+        KHR_DFDSETSVAL((DFD+1), 0, SAMPLEUPPER, 8448);
+        writeSample(DFD, 1, 0 | KHR_DF_SAMPLE_DATATYPE_EXPONENT,
+                    5, 27,
+                    1, 1, s_UNORM);
+        KHR_DFDSETSVAL((DFD+1), 1, SAMPLELOWER, 15);
+        KHR_DFDSETSVAL((DFD+1), 1, SAMPLEUPPER, 31);
+        writeSample(DFD, 2, 1,
+                    9, 9,
+                    1, 1, s_UNORM);
+        KHR_DFDSETSVAL((DFD+1), 2, SAMPLEUPPER, 8448);
+        writeSample(DFD, 3, 1 | KHR_DF_SAMPLE_DATATYPE_EXPONENT,
+                    5, 27,
+                    1, 1, s_UNORM);
+        KHR_DFDSETSVAL((DFD+1), 3, SAMPLELOWER, 15);
+        KHR_DFDSETSVAL((DFD+1), 3, SAMPLEUPPER, 31);
+        writeSample(DFD, 4, 2,
+                    9, 18,
+                    1, 1, s_UNORM);
+        KHR_DFDSETSVAL((DFD+1), 4, SAMPLEUPPER, 8448);
+        writeSample(DFD, 5, 2 | KHR_DF_SAMPLE_DATATYPE_EXPONENT,
+                    5, 27,
+                    1, 1, s_UNORM);
+        KHR_DFDSETSVAL((DFD+1), 5, SAMPLELOWER, 15);
+        KHR_DFDSETSVAL((DFD+1), 5, SAMPLEUPPER, 31);
+    } else if (bigEndian) {
+        /* No packed format is larger than 32 bits. */
+        /* No packed channel crosses more than two bytes. */
+        int totalBits = 0;
+        int bitChannel[32];
+        int beChannelStart[4];
+        int channelCounter;
+        int bitOffset = 0;
+        int BEMask;
+        int numSamples = numChannels;
+        int sampleCounter;
+        for (channelCounter = 0; channelCounter < numChannels; ++channelCounter) {
+            beChannelStart[channelCounter] = totalBits;
+            totalBits += bits[channelCounter];
+        }
+        BEMask = (totalBits - 1) & 0x18;
+        for (channelCounter = 0; channelCounter < numChannels; ++channelCounter) {
+            bitChannel[bitOffset ^ BEMask] = channelCounter;
+            if (((bitOffset + bits[channelCounter] - 1) & ~7) != (bitOffset & ~7)) {
+                /* Continuation sample */
+                bitChannel[((bitOffset + bits[channelCounter] - 1) & ~7) ^ BEMask] = channelCounter;
+                numSamples++;
+            }
+            bitOffset += bits[channelCounter];
+        }
+        DFD = writeHeader(numSamples, totalBits >> 3, suffix, i_COLOR);
+
+        sampleCounter = 0;
+        for (bitOffset = 0; bitOffset < totalBits;) {
+            if (bitChannel[bitOffset] == -1) {
+                /* Done this bit, so this is the lower half of something. */
+                /* We must therefore jump to the end of the byte and continue. */
+                bitOffset = (bitOffset + 8) & ~7;
+            } else {
+                /* Start of a channel? */
+                int thisChannel = bitChannel[bitOffset];
+                if ((beChannelStart[thisChannel] ^ BEMask) == bitOffset) {
+                    /* Must be just one sample if we hit it first. */
+                    writeSample(DFD, sampleCounter++, channels[thisChannel],
+                                    bits[thisChannel], bitOffset,
+                                    1, 1, suffix);
+                    bitOffset += bits[thisChannel];
+                } else {
+                    /* Two samples. Move to the end of the first one we hit when we're done. */
+                    int firstSampleBits = 8 - (beChannelStart[thisChannel] & 0x7); /* Rest of the byte */
+                    int secondSampleBits = bits[thisChannel] - firstSampleBits; /* Rest of the bits */
+                    writeSample(DFD, sampleCounter++, channels[thisChannel],
+                                firstSampleBits, beChannelStart[thisChannel] ^ BEMask,
+                                0, 1, suffix);
+                    /* Mark that we've already handled this sample */
+                    bitChannel[beChannelStart[thisChannel] ^ BEMask] = -1;
+                    writeSample(DFD, sampleCounter++, channels[thisChannel],
+                                secondSampleBits, bitOffset,
+                                1, 0, suffix);
+                    bitOffset += secondSampleBits;
+                }
+            }
+        }
+
+    } else { /* Little-endian */
+
+        int sampleCounter;
+        int totalBits = 0;
+        int bitOffset = 0;
+        for (sampleCounter = 0; sampleCounter < numChannels; ++sampleCounter) {
+            totalBits += bits[sampleCounter];
+        }
+
+        /* One sample per channel */
+        DFD = writeHeader(numChannels, totalBits >> 3, suffix, i_COLOR);
+        for (sampleCounter = 0; sampleCounter < numChannels; ++sampleCounter) {
+            writeSample(DFD, sampleCounter, channels[sampleCounter],
+                        bits[sampleCounter], bitOffset,
+                        1, 1, suffix);
+            bitOffset += bits[sampleCounter];
+        }
+    }
+    return DFD;
+}
+
 }	// end namespace dfd
 
 }	// end anonymous namespace
@@ -260,6 +396,17 @@ KtxImage::KtxImage(uint32_t _width, uint32_t _height, VkFormat _vkFormat, uint32
 		dfdData = dfd::createDFDUnpacked(0, 4, 4, 0, dfd::s_SFLOAT);
 		bytesPerPixel = 16;
 		break;
+	case VK_FORMAT_R16G16B16A16_SFLOAT:
+		dfdData = dfd::createDFDUnpacked(0, 4, 2, 0, dfd::s_SFLOAT);
+		bytesPerPixel = 8;
+		break;
+	case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32: {
+        int channels[1] = {0};
+        int bits[1] = {0};
+        dfdData = dfd::createDFDPacked(0, 6, bits, channels, dfd::s_UFLOAT);
+		bytesPerPixel = 4;
+		break;
+    }
 	case VK_FORMAT_R8G8B8A8_UNORM:
 		dfdData = dfd::createDFDUnpacked(0, 4, 1, 0, dfd::s_UNORM);
 		bytesPerPixel = 4;

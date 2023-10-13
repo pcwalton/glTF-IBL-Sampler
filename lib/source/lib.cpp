@@ -146,7 +146,7 @@ Result uploadImage(vkHelper& _vulkan, const char* _inputPath, VkImage& _outImage
 			std::vector<float> cubemapData;
 			cubemapData.resize(ktxLevelIndex.byteLength / sizeof(float));
 			inputFile.read(reinterpret_cast<char *>(&cubemapData[0]), ktxLevelIndex.byteLength);
-			if (inputFile.gcount() != ktxLevelIndex.byteLength)
+			if (static_cast<uint64_t>(inputFile.gcount()) != ktxLevelIndex.byteLength)
 			{
 				return Result::InputPanoramaFileNotFound;
 			}
@@ -250,7 +250,50 @@ Result convertVkFormat(vkHelper& _vulkan, const VkCommandBuffer _commandBuffer, 
 	return Result::Success;
 }
 
-Result downloadCubemap(vkHelper& _vulkan, const VkImage _srcImage, const char* _outputPath, const VkImageLayout inputImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+void convertImageOnCPU(std::vector<uint8_t> &destBuffer, const std::vector<uint8_t> &srcBuffer, VkFormat destFormat, VkFormat srcFormat)
+{
+	if (destFormat == srcFormat) {
+		std::copy(srcBuffer.begin(), srcBuffer.end(), std::back_inserter(destBuffer));
+		return;
+	}
+
+	assert(destFormat == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 && srcFormat == VK_FORMAT_R32G32B32A32_SFLOAT);
+
+	for (uint32_t i = 0; i < srcBuffer.size() / 16; i++) {
+		float r = *(float *)&srcBuffer[i * 16 + 0];
+		float g = *(float *)&srcBuffer[i * 16 + 4];
+		float b = *(float *)&srcBuffer[i * 16 + 8];
+		float a = *(float *)&srcBuffer[i * 16 + 12];
+
+		// https://registry.khronos.org/OpenGL/extensions/EXT/EXT_texture_shared_exponent.txt
+		const float N = 9.0f, B = 15.0f;
+		const float sharedexpMax = 65408.0f;
+		float redC = fmaxf(0.0f, fminf(sharedexpMax, r));
+		float greenC = fmaxf(0.0f, fminf(sharedexpMax, g));
+		float blueC = fmaxf(0.0f, fminf(sharedexpMax, b));
+
+		float maxC = fmaxf(fmaxf(redC, greenC), blueC);
+
+		float expSharedP = fmaxf(-16.0f, floorf(log2f(maxC))) + 16.0f;
+
+		float maxS = floorf(maxC / powf(2.0f, expSharedP - B - N) + 0.5f);
+		float expShared = maxS < 512.0f ? expSharedP : expSharedP + 1.0f;
+
+		float redS = floorf(redC / powf(2.0f, expShared - B - N) + 0.5f);
+		float greenS = floorf(greenC / powf(2.0f, expShared - B - N) + 0.5f);
+		float blueS = floorf(blueC / powf(2.0f, expShared - B - N) + 0.5f);
+
+		uint32_t packedR = static_cast<uint32_t>(redS);
+		uint32_t packedG = static_cast<uint32_t>(greenS);
+		uint32_t packedB = static_cast<uint32_t>(blueS);
+		uint32_t packedE = static_cast<uint32_t>(expShared);
+
+		uint32_t packed = packedR | (packedG << 9) | (packedB << 18) | (packedE << 27);
+		std::copy((uint8_t *)&packed, (uint8_t *)(&packed + 1), std::back_inserter(destBuffer));
+	}
+}
+
+Result downloadCubemap(vkHelper& _vulkan, const VkImage _srcImage, const char* _outputPath, const VkFormat targetFormat, const VkImageLayout inputImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 {
 	const VkImageCreateInfo* pInfo = _vulkan.getCreateInfo(_srcImage);
 	if (pInfo == nullptr)
@@ -262,6 +305,7 @@ Result downloadCubemap(vkHelper& _vulkan, const VkImage _srcImage, const char* _
 
 	const VkFormat cubeMapFormat = pInfo->format;
 	const uint32_t cubeMapFormatByteSize = getFormatSize(cubeMapFormat);
+	const uint32_t targetFormatByteSize = getFormatSize(targetFormat);
 	const uint32_t cubeMapSideLength = pInfo->extent.width;
 	const uint32_t mipLevels = pInfo->mipLevels;
 
@@ -360,27 +404,31 @@ Result downloadCubemap(vkHelper& _vulkan, const VkImage _srcImage, const char* _
 	// Image is copied to buffer
 	// Now map buffer and copy to ram
 	{
-		KtxImage ktxImage(cubeMapSideLength, cubeMapSideLength, cubeMapFormat, mipLevels, true);
+		KtxImage ktxImage(cubeMapSideLength, cubeMapSideLength, targetFormat, mipLevels, true);
 
-		std::vector<uint8_t> imageData;
+		std::vector<uint8_t> cubemapImageData, targetImageData;
 
 		uint32_t currentSideLength = cubeMapSideLength;
 
 		for (uint32_t level = 0; level < mipLevels; level++)
 		{
-			const size_t imageByteSize = (size_t)currentSideLength * (size_t)currentSideLength * (size_t)cubeMapFormatByteSize;
-			imageData.resize(imageByteSize);
+			const size_t cubemapByteSize = (size_t)currentSideLength * (size_t)currentSideLength * (size_t)cubeMapFormatByteSize;
+			const size_t targetByteSize = (size_t)currentSideLength * (size_t)currentSideLength * (size_t)targetFormatByteSize;
+			cubemapImageData.resize(cubemapByteSize);
 
 			Faces& faces = stagingBuffer[level];
 
 			for (uint32_t face = 0; face < 6u; face++)
 			{
-				if (_vulkan.readBufferData(faces[face], imageData.data(), imageByteSize) != VK_SUCCESS)
+				if (_vulkan.readBufferData(faces[face], cubemapImageData.data(), cubemapByteSize) != VK_SUCCESS)
 				{
 					return Result::VulkanError;
 				}
 
-				res = ktxImage.writeFace(imageData, face, level);
+				targetImageData.clear();
+				convertImageOnCPU(targetImageData, cubemapImageData, targetFormat, cubeMapFormat);
+
+				res = ktxImage.writeFace(targetImageData, face, level);
 
 				if (res != Result::Success)
 				{
@@ -1108,7 +1156,22 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 	////////////////////////////////////////////////////////////////////////////////////////
 	//Output
 
-	VkFormat targetFormat = static_cast<VkFormat>(_targetFormat);
+	VkFormat vulkanTargetFormat;
+	switch (_targetFormat) {
+	case IBLLib::OutputFormat::R8G8B8A8_UNORM:
+		vulkanTargetFormat = VK_FORMAT_R8G8B8A8_UNORM;
+		break;
+	case IBLLib::OutputFormat::R32G32B32A32_SFLOAT:
+	case IBLLib::OutputFormat::B9G9R9E5_UFLOAT:
+		// The GPU can't write to B9G9R9E5_UFLOAT textures, so convert on the CPU.
+		// TODO: Use compute shader?
+		vulkanTargetFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
+		break;
+	case IBLLib::OutputFormat::R16G16B16A16_SFLOAT:
+		vulkanTargetFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+		break;
+	}
+
 	VkImageLayout currentCubeMapImageLayout;
 	VkImage convertedCubeMap = VK_NULL_HANDLE;
 
@@ -1121,9 +1184,9 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 		currentCubeMapImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
 
-	if(targetFormat != cubeMapFormat)
+	if(vulkanTargetFormat != cubeMapFormat)
 	{
-		if ((res = convertVkFormat(vulkan, cubeMapCmd, outputCubeMap, convertedCubeMap, targetFormat, currentCubeMapImageLayout)) != Success)
+		if ((res = convertVkFormat(vulkan, cubeMapCmd, outputCubeMap, convertedCubeMap, vulkanTargetFormat, currentCubeMapImageLayout)) != Success)
 		{
 			printf("Failed to convert Image \n");
 			return res;
@@ -1145,7 +1208,7 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 		return Result::VulkanError;
 	}
 
-	if (downloadCubemap(vulkan, convertedCubeMap, _outputPathCubeMap, currentCubeMapImageLayout) != VK_SUCCESS)
+	if (downloadCubemap(vulkan, convertedCubeMap, _outputPathCubeMap, static_cast<VkFormat>(_targetFormat), currentCubeMapImageLayout) != VK_SUCCESS)
 	{
 		printf("Failed to download Image \n");
 		return Result::VulkanError;
