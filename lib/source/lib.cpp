@@ -817,7 +817,9 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 	VkImage panoramaImage;
 	bool inputIsCubemap;
 	uint32_t maxMipLevels = 0;
-	if ((res = uploadImage(vulkan, _inputPath, panoramaImage, _cubemapResolution, maxMipLevels, inputIsCubemap)) != Result::Success)
+
+	uint32_t inputCubemapResolution = 0, inputCubemapMipLevels = 0;
+	if ((res = uploadImage(vulkan, _inputPath, panoramaImage, inputCubemapResolution, inputCubemapMipLevels, inputIsCubemap)) != Result::Success)
 	{
 		return res;
 	}
