@@ -39,20 +39,37 @@ Result compileShader(vkHelper& _vulkan, VkShaderModule& _outModule, const uint32
 	return Result::Success;
 }
 
-Result uploadImage(vkHelper& _vulkan, int width, int height, int faces, const float *hdrData, uint32_t &_cubemapResolution, uint32_t &_maxMipLevels, VkImage& _outImage)
+Result uploadImage(vkHelper& _vulkan, int width, int height, int faces, const float *hdrData, uint32_t &_defaultCubemapResolution, uint32_t explicitCubemapResolution, uint32_t explicitMipCount, VkImage& _outImage)
 {
 	if (faces == 6)
 	{
-		_cubemapResolution = height;
+		_defaultCubemapResolution = height;
 	}
 	else
 	{
 		// it is best to sample an nxn cube map from a 4nx2n equirectangular image, e.g. a 1024x512 equirectangular images becomes a 256x256 cube map.
-		_cubemapResolution = _cubemapResolution != 0 ? _cubemapResolution : height / 2;
+		_defaultCubemapResolution = height / 2;
 	}
 
-	_maxMipLevels = 0;
-	for (uint32_t m = _cubemapResolution; m > 0; m = m >> 1, ++_maxMipLevels) {}
+	uint32_t cubemapResolution;
+	if (explicitCubemapResolution == 0)
+	{
+		cubemapResolution = _defaultCubemapResolution;
+	}
+	else
+	{
+		cubemapResolution = explicitCubemapResolution;
+	}
+
+	uint32_t maxMipLevels = 0;
+	if (explicitMipCount == 0)
+	{
+		for (uint32_t m = cubemapResolution; m > 0; m = m >> 1, ++maxMipLevels) {}
+	}
+	else
+	{
+		maxMipLevels = explicitMipCount;
+	}
 
 	VkCommandBuffer uploadCmds = VK_NULL_HANDLE;
 	if (_vulkan.createCommandBuffer(uploadCmds) != VK_SUCCESS)
@@ -63,7 +80,7 @@ Result uploadImage(vkHelper& _vulkan, int width, int height, int faces, const fl
 	// Calculate mip size.
 	uint32_t byteSize = 0;
 	uint32_t mipWidth = static_cast<uint32_t>(width), mipHeight = static_cast<uint32_t>(height);
-	for (uint32_t mip = 0; mip < _maxMipLevels; mip++) {
+	for (uint32_t mip = 0; mip < maxMipLevels; mip++) {
 		byteSize += mipWidth * mipHeight * static_cast<uint32_t>(faces) * 4 * sizeof(float);
 		mipWidth /= 2;
 		mipHeight /= 2;
@@ -90,7 +107,7 @@ Result uploadImage(vkHelper& _vulkan, int width, int height, int faces, const fl
 		height,
 		VK_FORMAT_R32G32B32A32_SFLOAT,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-		faces == 6 ? _maxMipLevels : 1,
+		faces == 6 ? maxMipLevels : 1,
 		faces,
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -126,7 +143,7 @@ Result uploadImage(vkHelper& _vulkan, int width, int height, int faces, const fl
 	return Result::Success;
 }
 
-Result uploadImage(vkHelper& _vulkan, const char* _inputPath, VkImage& _outImage, uint32_t& _cubemapResolution, uint32_t& _maxMipLevels, bool& _isCubemap)
+Result uploadImage(vkHelper& _vulkan, const char* _inputPath, VkImage& _outImage, uint32_t& _defaultCubemapResolution, uint32_t explicitCubemapResolution, uint32_t explicitMipCount, bool& _isCubemap)
 {
 	_outImage = VK_NULL_HANDLE;
 
@@ -152,7 +169,7 @@ Result uploadImage(vkHelper& _vulkan, const char* _inputPath, VkImage& _outImage
 			}
 
 			_isCubemap = true;
-			return uploadImage(_vulkan, ktxHeader.pixelWidth, ktxHeader.pixelHeight, ktxHeader.faceCount, &cubemapData[0], _cubemapResolution, _maxMipLevels, _outImage);
+			return uploadImage(_vulkan, ktxHeader.pixelWidth, ktxHeader.pixelHeight, ktxHeader.faceCount, &cubemapData[0], _defaultCubemapResolution, explicitCubemapResolution, explicitMipCount, _outImage);
 		}
 	}
 
@@ -164,7 +181,7 @@ Result uploadImage(vkHelper& _vulkan, const char* _inputPath, VkImage& _outImage
 	}
 
 	_isCubemap = false;
-	return uploadImage(_vulkan, panorama.getWidth(), panorama.getHeight(), 1, panorama.getHdrData(), _cubemapResolution, _maxMipLevels, _outImage);
+	return uploadImage(_vulkan, panorama.getWidth(), panorama.getHeight(), 1, panorama.getHdrData(), _defaultCubemapResolution, explicitCubemapResolution, explicitMipCount, _outImage);
 }
 
 Result convertVkFormat(vkHelper& _vulkan, const VkCommandBuffer _commandBuffer, const VkImage _srcImage, VkImage& _outImage, VkFormat _dstFormat, const VkImageLayout inputImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
@@ -816,12 +833,16 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 
 	VkImage panoramaImage;
 	bool inputIsCubemap;
-	uint32_t maxMipLevels = 0;
 
-	uint32_t inputCubemapResolution = 0, inputCubemapMipLevels = 0;
-	if ((res = uploadImage(vulkan, _inputPath, panoramaImage, inputCubemapResolution, inputCubemapMipLevels, inputIsCubemap)) != Result::Success)
+	uint32_t defaultCubemapResolution = 0;
+	if ((res = uploadImage(vulkan, _inputPath, panoramaImage, defaultCubemapResolution, _cubemapResolution, _mipmapCount, inputIsCubemap)) != Result::Success)
 	{
 		return res;
+	}
+
+	if (_cubemapResolution == 0)
+	{
+		_cubemapResolution = defaultCubemapResolution;
 	}
 
 	VkShaderModule fullscreenVertexShader = VK_NULL_HANDLE;
@@ -850,9 +871,9 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 	_mipmapCount = _mipmapCount != 0 ? _mipmapCount : static_cast<uint32_t>(floor(log2(_cubemapResolution)));
 
 	const uint32_t cubeMapSideLength = _cubemapResolution;
-	const uint32_t outputMipLevels = _distribution == Distribution::Lambertian ? 1u : _mipmapCount;
+	const uint32_t maxMipLevels = _distribution == Distribution::Lambertian ? 1u : _mipmapCount;
 
-	if ((_cubemapResolution >> (outputMipLevels - 1)) < 1)
+	if ((_cubemapResolution >> (maxMipLevels - 1)) < 1)
 	{
 		printf("Error: CubemapResolution incompatible with MipmapCount\n");
 		return Result::InvalidArgument;
@@ -901,13 +922,13 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 	}
 	else if (vulkan.createImage2DAndAllocate(outputCubeMap, cubeMapSideLength, cubeMapSideLength, cubeMapFormat,
 																					 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-																					 outputMipLevels, 6u, VK_IMAGE_TILING_OPTIMAL, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_EXCLUSIVE, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) != VK_SUCCESS)
+																					 maxMipLevels, 6u, VK_IMAGE_TILING_OPTIMAL, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_SHARING_MODE_EXCLUSIVE, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) != VK_SUCCESS)
 	{
 		return Result::VulkanError;
 	}
 
-	std::vector< std::vector<VkImageView> > outputCubeMapViews(outputMipLevels);
-	for (uint32_t i = 0; i < outputMipLevels; ++i)
+	std::vector< std::vector<VkImageView> > outputCubeMapViews(maxMipLevels);
+	for (uint32_t i = 0; i < maxMipLevels; ++i)
 	{
 		outputCubeMapViews[i].resize(6, VK_NULL_HANDLE); //sides of the cube
 
@@ -930,7 +951,7 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 		subresourceRange.baseArrayLayer = 0u;
 		subresourceRange.baseMipLevel = 0u;
 		subresourceRange.layerCount = 6u;
-		subresourceRange.levelCount = outputMipLevels;
+		subresourceRange.levelCount = maxMipLevels;
 
 		if (vulkan.createImageView(outputCubeMapCompleteView, outputCubeMap, subresourceRange, VK_FORMAT_UNDEFINED, VK_IMAGE_VIEW_TYPE_CUBE) != VK_SUCCESS)
 		{
@@ -1117,7 +1138,7 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 		// This has the desirable side effect that the framebuffer size of the last filter pass
 		// matches with the LUT size, allowing the LUT to only be written in the last pass
 		// without worrying to preserve the LUT's image contents between the previous render passes.
-		for (uint32_t currentMipLevel = outputMipLevels - 1; currentMipLevel != -1; currentMipLevel--)
+		for (uint32_t currentMipLevel = maxMipLevels - 1; currentMipLevel != -1; currentMipLevel--)
 		{
 			unsigned int currentFramebufferSideLength = cubeMapSideLength >> currentMipLevel;
 			std::vector<VkImageView> renderTargetViews(outputCubeMapViews[currentMipLevel]);
@@ -1140,7 +1161,7 @@ IBLLib::Result IBLLib::sample(const char* _inputPath, const char* _outputPathCub
 													subresourceRange);
 
 			PushConstant values{};
-			values.roughness = static_cast<float>(currentMipLevel) / static_cast<float>(outputMipLevels - 1);
+			values.roughness = static_cast<float>(currentMipLevel) / static_cast<float>(maxMipLevels - 1);
 			values.sampleCount = _sampleCount;
 			values.mipLevel = currentMipLevel;
 			values.width = cubeMapSideLength;
