@@ -444,12 +444,11 @@ KtxImage::KtxImage(uint32_t _width, uint32_t _height, VkFormat _vkFormat, uint32
 		reinterpret_cast<uint8_t *>(&mLevelIndices[0] + _levels));
 
 	index.dfdByteOffset = static_cast<uint32_t>(mData.size());
-	uint32_t wordSize = static_cast<uint32_t>(dfd::dfdWordSize(4));
-	index.dfdByteLength = (wordSize + 1) * 4;
+	index.dfdByteLength = dfdData[0];
 	mData.insert(
 		mData.end(),
 		reinterpret_cast<uint8_t *>(dfdData),
-		reinterpret_cast<uint8_t *>(dfdData + wordSize));
+		reinterpret_cast<uint8_t *>(dfdData) + dfdData[0]);
 
 	index.kvdByteOffset = 0;
 	index.kvdByteLength = 0;
@@ -472,7 +471,7 @@ KtxImage::KtxImage(uint32_t _width, uint32_t _height, VkFormat _vkFormat, uint32
 	size_t mipOffset = mData.size();
 	for (int mip = _levels - 1; mip >= 0; mip--) {
 		if ((mipOffset & 0xf) != 0)
-			mipOffset += 16 - (mipOffset & 0xf);
+			mipOffset += bytesPerPixel - (mipOffset & 0xf);
 		mLevelIndices[mip].byteOffset = mipOffset;
 		mipOffset += mLevelIndices[mip].byteLength;
 	}
