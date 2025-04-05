@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <cstring>
 #include <cassert>
+#include <math.h>
 
 #include "format.h"
 
